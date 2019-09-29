@@ -31,3 +31,20 @@ imdb_dataset = tf.keras.datasets.imdb
 print("Training entries: {}, labels: {}".format(len(train_data), len(train_labels)))
 
 train_data_size = len(train_data)
+
+def build_reverse_word_index():
+    imdb_word_index = imdb_dataset.get_word_index()
+    imdb_word_index = {k: (v + 3) for k, v in imdb_word_index.items()}
+    imdb_word_index['<PAD>'] = 0
+    imdb_word_index['<START>'] = 1
+    imdb_word_index['<UNK>'] = 2
+    imdb_word_index['<UNUSED>'] = 3
+    return dict((value, key) for (key, value) in imdb_word_index.items())
+
+imdb_reverse_word_index = build_reverse_word_index()
+
+def decode_review(review):
+    return ' '.join([imdb_reverse_word_index.get(sample_key, '?') for sample_key in review])
+
+print("Example of vector translation using word index from {}".format(train_data[0]))
+print("to {}".format(decode_review(train_data[0])))
