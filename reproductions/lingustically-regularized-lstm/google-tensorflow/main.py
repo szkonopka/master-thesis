@@ -100,7 +100,7 @@ def create_embeddings(word_vectors, output_path, starting_record_id):
             writer.write(example.SerializeToString())
         return record_id
 
-create_embeddings(train_data, 'tmp/imdb/embeddings.tfr', 0)
+#create_embeddings(train_data, 'tmp/imdb/embeddings.tfr', 0)
 
 def create_example(word_vector, label, record_id):
     features = {
@@ -121,8 +121,8 @@ def create_records(word_vectors, labels, record_path, starting_record_id):
         return record_id
 
 
-next_record_id = create_records(train_data, train_labels, 'tmp/imdb/train_data.tfr', 0)
-create_records(test_data, test_labels, 'tmp/imdb/test_data.tfr', next_record_id)
+#next_record_id = create_records(train_data, train_labels, 'tmp/imdb/train_data.tfr', 0)
+#create_records(test_data, test_labels, 'tmp/imdb/test_data.tfr', next_record_id)
 
 NBR_FEATURE_PREFIX = "NL_nbr_"
 NBR_WEIGHT_SUFIX = "_weight"
@@ -156,12 +156,16 @@ def pad_sequence(sequence, max_seq_length):
 
 
 def parse_example(example_proto):
+    print("example_proto")
+    print(example_proto)
     feature_spec = {
         'words': tf.io.VarLenFeature(tf.int64),
         'label': tf.io.FixedLenFeature((), tf.int64, default_value=-1)
     }
+    print("feature_spec")
+    print(feature_spec)
 
-    for i in range(HPARAMS.num_neigbors):
+    for i in range(HPARAMS.num_neighbors):
         nbr_feature_key = '{}{}_{}'.format(NBR_FEATURE_PREFIX, i, 'words')
         nbr_weight_key = '{}{}{}'.format(NBR_FEATURE_PREFIX, i, NBR_WEIGHT_SUFIX)
         feature_spec[nbr_feature_key] = tf.io.VarLenFeature(tf.int64)
@@ -170,14 +174,97 @@ def parse_example(example_proto):
     features = tf.io.parse_single_example(example_proto, feature_spec)
     features['words'] = pad_sequence(features['words'], HPARAMS.max_seq_length)
 
-    for i in range(HPARAMS.num_neighbors):
-        nbr_feature_key = ''
+    print("features")
+    print(features)
 
+    for i in range(HPARAMS.num_neighbors):
+        nbr_feature_key = '{}{}_{}'.format(NBR_FEATURE_PREFIX, i, 'words')
+        features[nbr_feature_key] = pad_sequence(features[nbr_feature_key], HPARAMS.max_seq_length)
+
+    print("featuresv2")
+    print(features)
+
+    labels = features.pop('label')
+    return features, labels
 
 def make_dataset(file_path, training=False):
-    dataset = tf.train.TFRecordDataset([file_path])
+    dataset = tf.data.TFRecordDataset([file_path])
     if training:
         dataset = dataset.shuffle(10000)
     dataset = dataset.map(parse_example)
     dataset = dataset.batch(HPARAMS.batch_size)
     return dataset
+
+train_dataset = make_dataset('tmp/imdb/nsl_train_data.tfr', True)
+test_dataset = make_dataset('tmp/imdb/test_data.tfr')
+
+print(train_dataset)
+print(test_dataset)
+
+def make_feed_forward_model():
+    inputs = tf.keras.Input(shape=(HPARAMS.max_seq_length,), dtype='int64', name='words')
+    embedding_layer = tf.keras.layers.Embedding(HPARAMS.vocab_size, 16)(inputs)
+    pooling_layer = tf.keras.layers.GlobalAveragePooling1D()(embedding_layer)
+    dense_layer = tf.keras.layers.Dense(16, activation='relu')(pooling_layer)
+    outputs = tf.keras.layers.Dense(1, activation='sigmoid')(dense_layer)
+    return tf.keras.Model(inputs=inputs, outputs=outputs)
+
+def make_bilstm_model():
+    inputs = tf.keras.Input(shape=(HPARAMS.max_seq_length,), dtype='int64', name='words')
+    embedding_layer = tf.keras.layers.Embedding(HPARAMS.vocab_size, HPARAMS.num_embedding_dims)(inputs)
+
+    lstm_layer = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(HPARAMS.num_lstm_dims))(embedding_layer)
+
+    dense_layer = tf.keras.layers.Dense(HPARAMS.num_fc_units, activation='relu')(lstm_layer)
+    outputs = tf.keras.layers.Dense(1, activation='sigmoid')(dense_layer)
+    return tf.keras.Model(inputs=inputs, outputs=outputs)
+
+create_new_model = True
+
+if create_new_model:
+    bilstm_model = make_bilstm_model()
+    bilstm_model.summary()
+
+    feed_forward_model = make_feed_forward_model()
+    feed_forward_model.summary()
+
+    bilstm_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+    validation_fraction = 0.9
+    validation_size = int(validation_fraction * int(train_data_size / HPARAMS.batch_size))
+
+    print("Validation set size {}".format(validation_size))
+    validation_dataset = train_dataset.take(validation_size)
+    train_dataset = train_dataset.skip(validation_size)
+
+    history = bilstm_model.fit(
+        train_dataset,
+        validation_data=validation_dataset,
+        epochs=HPARAMS.train_epochos,
+        verbose=1
+    )
+
+    results = bilstm_model.evaluate(test_dataset, steps=HPARAMS.eval_steps)
+    print(results)
+
+    history_dict = history.history
+    print(history_dict.keys())
+
+    bilstm_model.save('./models/bilstm_keras_model.h5')
+
+    acc = history_dict['accuracy']
+    val_acc = history_dict['val_accuracy']
+    loss = history_dict['loss']
+    val_loss = history_dict['val_loss']
+    epochs = range(1, len(acc) + 1)
+
+    plt.plot(epochs, loss, '-r^', label='Training label')
+    plt.plot(epochs, val_loss, '-bo', label='Validation label')
+    plt.title('Training and validation loss')
+    plt.xlabel('epochs')
+    plt.ylabel('loss')
+    plt.legend(loc='best')
+
+    plt.show()
+else:
+    bilstm_model = tf.keras.models.load_model('./models/bilstm_keras_model.h5')
