@@ -258,11 +258,15 @@ if create_new_model:
     val_loss = history_dict['val_loss']
     epochs = range(1, len(acc) + 1)
 
-    plt.plot(epochs, loss, '-r^', label='Training label')
-    plt.plot(epochs, val_loss, '-bo', label='Validation label')
-    plt.title('Training and validation loss')
+    #plt.plot(epochs, loss, '-r^', label='Training label')
+    #plt.plot(epochs, val_loss, '-bo', label='Validation label')
+    #plt.title('Training and validation loss')
+    plt.plot(epochs, acc, '-r^', label='Training label')
+    plt.plot(epochs, val_acc, '-bo', label='Validation label')
+    plt.title('Training and validation accuracy')
     plt.xlabel('epochs')
-    plt.ylabel('loss')
+    #plt.ylabel('loss')
+    plt.ylabel('accuracy')
     plt.legend(loc='best')
 
     plt.show()
