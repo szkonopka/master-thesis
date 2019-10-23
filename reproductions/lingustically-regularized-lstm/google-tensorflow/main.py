@@ -56,7 +56,7 @@ print("to {}".format(decode_review(train_data[0])))
 
 # This is necessary because hub.KerasLayer assumes tensor hashability, which
 # is not supported in eager mode.
-tf.compat.v1.disable_tensor_equality()
+# tf.compat.v1.disable_tensor_equality()
 
 pretrained_embedding = 'https://tfhub.dev/google/tf2-preview/gnews-swivel-20dim/1'
 
